@@ -60,6 +60,7 @@ import static com.epam.parso.impl.SasFileConstants.*;
  * use {@link SasFileReaderImpl} which is a wrapper for SasFileParser. Despite this, SasFileParser
  * is publicly available, it can be instanced via {@link SasFileParser.Builder} and used directly.
  * Public access to the SasFileParser class was added in scope of this issue:
+ *
  * @see <a href="https://github.com/epam/parso/issues/51"></a>.
  */
 public final class SasFileParser {
@@ -511,6 +512,27 @@ public final class SasFileParser {
     }
 
     /**
+     * The function to read and process all columns of next row unformatted from current sas7bdat file.
+     *
+     * @return the object array containing elements of current row.
+     * @throws IOException if reading from the {@link SasFileParser#sasFileStream} stream is impossible.
+     */
+    public Object[] readNextUnformatted() throws IOException {
+        return readNextUnformatted(null);
+    }
+
+    /**
+     * The function to read and process specified columns of next row unformatted from current sas7bdat file.
+     *
+     * @param columnNames list of column names which should be processed, if null then all columns are processed.
+     * @return the object array containing elements of current row.
+     * @throws IOException if reading from the {@link SasFileParser#sasFileStream} stream is impossible.
+     */
+    public Object[] readNextUnformatted(List<String> columnNames) throws IOException {
+        return readNext(columnNames, true);
+    }
+
+    /**
      * The function to read and process all columns of next row from current sas7bdat file.
      *
      * @return the object array containing elements of current row.
@@ -528,6 +550,19 @@ public final class SasFileParser {
      * @throws IOException if reading from the {@link SasFileParser#sasFileStream} stream is impossible.
      */
     public Object[] readNext(List<String> columnNames) throws IOException {
+        return readNext(columnNames, false);
+    }
+
+    /**
+     * The function to read and process specified columns of next row from current sas7bdat file - either formatted or
+     * unformatted according to the given argument 'unformatted'.
+     *
+     * @param columnNames list of column names which should be processed, if null then all columns are processed.
+     * @param unformatted true, if values should be returned unformatted
+     * @return the object array containing elements of current row.
+     * @throws IOException if reading from the {@link SasFileParser#sasFileStream} stream is impossible.
+     */
+    private Object[] readNext(List<String> columnNames, boolean unformatted) throws IOException {
         if (currentRowInFileIndex++ >= sasFileProperties.getRowCount() || eof) {
             return null;
         }
@@ -538,7 +573,8 @@ public final class SasFileParser {
                 SubheaderPointer currentSubheaderPointer =
                         currentPageDataSubheaderPointers.get(currentRowOnPageIndex++);
                 ((ProcessingDataSubheader) subheaderIndexToClass.get(SubheaderIndexes.DATA_SUBHEADER_INDEX))
-                        .processSubheader(currentSubheaderPointer.offset, currentSubheaderPointer.length, columnNames);
+                        .processSubheader(currentSubheaderPointer.offset, currentSubheaderPointer.length,
+                                columnNames, unformatted);
                 if (currentRowOnPageIndex == currentPageDataSubheaderPointers.size()) {
                     readNextPage();
                     currentRowOnPageIndex = 0;
@@ -550,8 +586,9 @@ public final class SasFileParser {
                 int alignCorrection = (bitOffset + SUBHEADER_POINTERS_OFFSET + currentPageSubheadersCount
                         * subheaderPointerLength) % BITS_IN_BYTE;
                 currentRow = processByteArrayWithData(bitOffset + SUBHEADER_POINTERS_OFFSET + alignCorrection
-                        + currentPageSubheadersCount * subheaderPointerLength + currentRowOnPageIndex++
-                        * sasFileProperties.getRowLength(), sasFileProperties.getRowLength(), columnNames);
+                                + currentPageSubheadersCount * subheaderPointerLength + currentRowOnPageIndex++
+                                * sasFileProperties.getRowLength(), sasFileProperties.getRowLength(), columnNames,
+                        unformatted);
                 if (currentRowOnPageIndex == Math.min(sasFileProperties.getRowCount(),
                         sasFileProperties.getMixPageRowCount())) {
                     readNextPage();
@@ -560,7 +597,8 @@ public final class SasFileParser {
                 break;
             case PAGE_DATA_TYPE:
                 currentRow = processByteArrayWithData(bitOffset + SUBHEADER_POINTERS_OFFSET + currentRowOnPageIndex++
-                        * sasFileProperties.getRowLength(), sasFileProperties.getRowLength(), columnNames);
+                                * sasFileProperties.getRowLength(), sasFileProperties.getRowLength(), columnNames,
+                        unformatted);
                 if (currentRowOnPageIndex == currentPageBlockCount) {
                     readNextPage();
                     currentRowOnPageIndex = 0;
@@ -673,9 +711,11 @@ public final class SasFileParser {
      * @param rowOffset   - the offset of the row in cachedPage.
      * @param rowLength   - the length of the row.
      * @param columnNames - list of column names which should be processed.
+     * @param unformatted - true, if values should be returned unformatted (raw values)
      * @return the array of objects storing the data of the row.
      */
-    private Object[] processByteArrayWithData(long rowOffset, long rowLength, List<String> columnNames) {
+    private Object[] processByteArrayWithData(long rowOffset, long rowLength, List<String> columnNames,
+                                              boolean unformatted) {
         Object[] rowElements;
         if (columnNames != null) {
             rowElements = new Object[columnNames.size()];
@@ -697,11 +737,12 @@ public final class SasFileParser {
         for (int currentColumnIndex = 0; currentColumnIndex < sasFileProperties.getColumnsCount()
                 && columnsDataLength.get(currentColumnIndex) != 0; currentColumnIndex++) {
             if (columnNames == null) {
-                rowElements[currentColumnIndex] = processElement(source, offset, currentColumnIndex);
+                rowElements[currentColumnIndex] = processElement(source, offset, currentColumnIndex, unformatted);
             } else {
                 String name = columns.get(currentColumnIndex).getName();
                 if (columnNames.contains(name)) {
-                    rowElements[columnNames.indexOf(name)] = processElement(source, offset, currentColumnIndex);
+                    rowElements[columnNames.indexOf(name)] = processElement(source, offset,
+                            currentColumnIndex, unformatted);
                 }
             }
         }
@@ -715,9 +756,10 @@ public final class SasFileParser {
      * @param source             an array of bytes containing required data.
      * @param offset             the offset in source of required data.
      * @param currentColumnIndex index of the current element.
+     * @param unformatted        true, if unformatted value should be returned
      * @return object storing the data of the element.
      */
-    private Object processElement(byte[] source, int offset, int currentColumnIndex) {
+    private Object processElement(byte[] source, int offset, int currentColumnIndex, boolean unformatted) {
         byte[] temp;
         int length = columnsDataLength.get(currentColumnIndex);
         if (columns.get(currentColumnIndex).getType() == Number.class) {
@@ -726,7 +768,7 @@ public final class SasFileParser {
             if (columnsDataLength.get(currentColumnIndex) <= 2) {
                 return bytesToShort(temp);
             } else {
-                if (columns.get(currentColumnIndex).getFormat().getName().isEmpty()) {
+                if (unformatted || columns.get(currentColumnIndex).getFormat().getName().isEmpty()) {
                     return convertByteArrayToNumber(temp);
                 } else {
                     if (DATETIME_FORMAT_STRINGS.containsKey(columns.get(currentColumnIndex).getFormat().getName())) {
@@ -928,8 +970,7 @@ public final class SasFileParser {
 
     /**
      * The function to convert an array of bytes that stores the number of days elapsed from 01/01/1960 into a variable
-     * of the {@link Date} type. {@link SasFileConstants#DATE_FORMAT_STRINGS} stores the formats of columns that contain
-     * such data.
+     * of the {@link Date} type.
      *
      * @param bytes the array of bytes that stores the number of days from 01/01/1960.
      * @return a variable of the {@link Date} type.
@@ -1082,9 +1123,11 @@ public final class SasFileParser {
          * @param subheaderOffset offset in bytes from the beginning of subheader.
          * @param subheaderLength length of subheader in bytes.
          * @param columnNames     list of column names which should be processed.
+         * @param unformatted     true, if unformatted data should be returned.
          * @throws IOException if reading from the {@link SasFileParser#sasFileStream} stream is impossible.
          */
-        void processSubheader(long subheaderOffset, long subheaderLength, List<String> columnNames) throws IOException;
+        void processSubheader(long subheaderOffset, long subheaderLength, List<String> columnNames,
+                              boolean unformatted) throws IOException;
     }
 
     /**
@@ -1507,7 +1550,8 @@ public final class SasFileParser {
     class DataSubheader implements ProcessingDataSubheader {
         /**
          * The method to read compressed or uncompressed data from the subheader. The results are stored as a row
-         * in {@link SasFileParser#currentRow}. The {@link SasFileParser#processByteArrayWithData(long, long, List)}
+         * in {@link SasFileParser#currentRow}.
+         * The {@link SasFileParser#processByteArrayWithData(long, long, List, boolean)}
          * function converts the array of bytes into a list of objects.
          *
          * @param subheaderOffset the offset at which the subheader is located.
@@ -1516,12 +1560,13 @@ public final class SasFileParser {
          */
         @Override
         public void processSubheader(long subheaderOffset, long subheaderLength) throws IOException {
-            currentRow = processByteArrayWithData(subheaderOffset, subheaderLength, null);
+            currentRow = processByteArrayWithData(subheaderOffset, subheaderLength, null, false);
         }
 
         /**
          * The method to read compressed or uncompressed data from the subheader. The results are stored as a row
-         * in {@link SasFileParser#currentRow}. The {@link SasFileParser#processByteArrayWithData(long, long, List)}
+         * in {@link SasFileParser#currentRow}.
+         * The {@link SasFileParser#processByteArrayWithData(long, long, List, boolean)}
          * function converts the array of bytes into a list of objects.
          *
          * @param subheaderOffset the offset at which the subheader is located.
@@ -1530,8 +1575,8 @@ public final class SasFileParser {
          */
         @Override
         public void processSubheader(long subheaderOffset, long subheaderLength,
-                                     List<String> columnNames) throws IOException {
-            currentRow = processByteArrayWithData(subheaderOffset, subheaderLength, columnNames);
+                                     List<String> columnNames, boolean unformatted) throws IOException {
+            currentRow = processByteArrayWithData(subheaderOffset, subheaderLength, columnNames, unformatted);
         }
     }
 }

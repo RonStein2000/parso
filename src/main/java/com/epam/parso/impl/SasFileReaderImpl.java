@@ -187,6 +187,17 @@ public class SasFileReaderImpl implements SasFileReader {
         return sasFileParser.readNext(columnNames);
     }
 
+    @Override
+    public Object[] readNextUnformatted() throws IOException {
+        return sasFileParser.readNextUnformatted(null);
+    }
+
+    @Override
+    public Object[] readNextUnformatted(List<String> columnNames) throws IOException {
+        return sasFileParser.readNextUnformatted(columnNames);
+    }
+
+
     /**
      * The function to get sas file properties.
      *

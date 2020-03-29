@@ -77,6 +77,25 @@ public interface SasFileReader {
      * @throws IOException if reading input stream is impossible.
      */
     Object[] readNext(List<String> columnNames) throws IOException;
+    /**
+     * Reads rows one by one from the sas7bdat file before formatting (raw data).
+     *
+     * @return an array of objects whose elements can be objects of the following classes: double, byte[]
+     * depending on the column they are in.
+     * @throws IOException if reading input stream is impossible.
+     */
+    Object[] readNextUnformatted() throws IOException;
+
+    /**
+     * Reads rows one by one from the sas7bdat file before formatting (raw data). For each row,
+     * only the columns defined in the list are read.
+     *
+     * @param columnNames list of column names which should be processed.
+     * @return an array of objects whose elements can be objects of the following classes:  double, byte[]
+     * depending on the column they are in.
+     * @throws IOException if reading input stream is impossible.
+     */
+    Object[] readNextUnformatted(List<String> columnNames) throws IOException;
 
     /**
      * The function to get sas file properties.

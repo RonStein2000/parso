@@ -1,4 +1,9 @@
 ﻿# Parso Java library
+## Parso 2.0.12
+***02 April 2020***
+
+* Added the ability to read raw data (unformatted) from SAS files. This allows for comparable output compared to SAS unformatted export and is th fastest option to read SAS data.
+
 ## Parso 2.0.11
 ***25 March 2019***
 
