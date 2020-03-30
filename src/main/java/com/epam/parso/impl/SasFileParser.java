@@ -997,7 +997,7 @@ public final class SasFileParser {
      *
      * @return columns list.
      */
-    List<Column> getColumns() {
+    public List<Column> getColumns() {
         return columns;
     }
 
